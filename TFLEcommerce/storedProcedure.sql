@@ -138,44 +138,45 @@ CALL AddToCart(2,13,1,"/images/Fashion/tshirt.jpeg");
 
 -- remove from cart
 DELIMITER //
-CREATE PROCEDURE RemoveFromCart
-(
-in pid int
-)
+CREATE PROCEDURE RemoveFromCart(in pid int, in uid int, in qty int)
 BEGIN
-DECLARE cartid int;
-DECLARE uid int;
-DECLARE countofcart int;
--- get user id of that product that we have to delete
-SET uid=( 
-			select  c.customer_id from cart_items ci
-			join cart c on c.cart_id=ci.cart_id
-			where ci.product_id=pid
-		);
+DECLARE available_quantity int; 
+select quantity into available_quantity from cart_items where product_id = pid;
 
--- get cartid of the product that we have to delete also check its user
-set cartid=(
-				select ci.cart_id 
-				from cart_items ci
-				join cart c on c.cart_id=ci.cart_id
-				where ci.product_id=pid AND customer_id=uid
-			);
-            
--- delete that product from cart_item
-delete from cart_items where product_id=pid;
-
--- check the  remaining product count of the user cart 
-select count(*) into countofcart 
-from cart_items where cart_id=cartid;
-
--- if remaining products are zero the delete cart
-if countofcart = 0 then 
-	delete from cart where cart_id=cartid;
+if not exists (select customer_id 
+	from cart c
+	join cart_items ci 
+    on c.cart_id = ci.cart_id
+    where ci.product_id = pid and c.customer_id = uid)
+then SIGNAL SQLSTATE '45000'
+	SET MESSAGE_TEXT = 'Requested Customer Cart does not exists!';
+    
+else if (available_quantity) is null
+then 
+    SIGNAL SQLSTATE '45000'
+	 SET MESSAGE_TEXT = 'Item is not added';
+     
+else if available_quantity = qty
+then 
+    delete ci from cart_items ci
+    join cart c on c.cart_id = ci.cart_id
+    where ci.product_id = pid and c.customer_id = uid;
+    
+else if (available_quantity) < qty
+	then SIGNAL SQLSTATE '45000'
+	 SET MESSAGE_TEXT = 'Invalid input of quantity, quantity>available items';
+else
+	update cart_items set quantity = quantity - qty
+	where product_id = pid;
+    
+end if;
+end if;
+end if;
 end if;
 END//
 DELIMITER ;
 
-CALL RemoveFromCart(11);
+CALL RemoveFromCart(4, 1, 3);
 
 
 
